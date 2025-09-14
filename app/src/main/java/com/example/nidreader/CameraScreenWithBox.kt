@@ -234,21 +234,8 @@ suspend fun extractNidDataWithDetection(bitmap: Bitmap): Map<String, String> {
     val lines = fullText.split("\n").map { it.trim() }.filter { it.isNotEmpty() }
 
 // Extract name
-    val ignoreKeywords = listOf(
-        "government", "people", "republic", "bangladesh",
-        "date of birth", "smart nid", "national", "id", "name"
-    )
-    val nameRegex = Regex("Name[:\\s]+([A-Za-z\\s.]+)")
-    val name = nameRegex.find(fullText)?.groupValues?.get(1)?.trim()
-
-
-//    if (name != null) results["name"] = name
-
-    if (name != null && !ignoreKeywords.any { keyword ->
-            name.contains(keyword, ignoreCase = true)
-        }) {
-        results["name"] = name
-    }
+   val name = extractName(fullText, results)
+    results["name"] = name
 
 // Extract dob
     val dob = extractDob(fullText)
@@ -295,6 +282,28 @@ suspend fun extractNidDataWithDetection(bitmap: Bitmap): Map<String, String> {
     return results
 }
 
+private fun extractName(
+    fullText: String,
+    results: MutableMap<String, String>
+): String {
+    val ignoreKeywords = listOf(
+        "government", "people", "republic", "bangladesh",
+        "date of birth", "smart nid", "national", "id", "name"
+    )
+    val nameRegex = Regex("Name[:\\s]+([A-Za-z\\s.]+)")
+    val name = nameRegex.find(fullText)?.groupValues?.get(1)?.trim()
+    var refinedName = "";
+
+    refinedName = if (name != null && !ignoreKeywords.any { keyword ->
+            name.contains(keyword, ignoreCase = true)
+        }) {
+        name;
+    } else {
+        "";
+    }
+    return refinedName;
+}
+
 suspend fun runTextRecognition(bitmap: Bitmap): String = suspendCancellableCoroutine { cont ->
     val image = InputImage.fromBitmap(bitmap, 0)
     val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
@@ -308,68 +317,9 @@ suspend fun runTextRecognition(bitmap: Bitmap): String = suspendCancellableCorou
         }
 }
 
-fun extractName(lines: List<String>): String? {
-    val ignoreKeywords = listOf(
-        "government", "people", "republic", "bangladesh",
-        "date of birth", "smart nid", "national", "id", "name"
-    )
 
-    return lines.firstOrNull { line ->
-        line.isNotBlank()
-                && !ignoreKeywords.any { kw -> line.contains(kw, ignoreCase = true) }
-                && !line.any { it.isDigit() } // name shouldn't have digits
-                && line.length > 3 // avoid too short junk
-    }
-}
 
 fun extractDob(text: String): String? {
     val dobRegex = Regex("(\\d{2}[-/ ]\\d{2}[-/ ]\\d{4}|\\d{2} [A-Za-z]{3} \\d{4})")
     return dobRegex.find(text)?.value
-}
-
-suspend fun extractSmartNidNumber(bitmap: Bitmap): String? {
-    val cropped = cropSmartNidNumber(bitmap)
-    val processed = preprocessForDigits(cropped)
-    val text = runTextRecognition(processed)
-    android.util.Log.d("NIDDebug", "Recognized Text: $text")
-    val nidRegex = Regex("\\b\\d{10,17}\\b")
-    return nidRegex.find(text)?.value
-}
-
-fun cropSmartNidNumber(bitmap: Bitmap): Bitmap {
-    val width = bitmap.width
-    val height = bitmap.height
-// Adjusted cropping to target NID number near bottom-right (e.g., last 20% width, 12% height, shifted up slightly)
-    val cropWidth = (width * 0.2f).toInt()
-    val cropHeight = (height * 0.12f).toInt()
-
-    val left = width - cropWidth
-    val top = height - (height * 0.15f).toInt() // Shift up by 3% more from the bottom
-
-    val croppedBitmap = Bitmap.createBitmap(bitmap, left, top, cropWidth, cropHeight)
-
-// Log cropped image details
-    android.util.Log.d("CropDebug", "Cropped Bitmap - Width: ${croppedBitmap.width}, Height: ${croppedBitmap.height}, Left: $left, Top: $top")
-
-    return croppedBitmap
-}
-
-fun preprocessForDigits(bitmap: Bitmap): Bitmap {
-    val width = bitmap.width
-    val height = bitmap.height
-    val result = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-
-    for (x in 0 until width) {
-        for (y in 0 until height) {
-            val pixel = bitmap.getPixel(x, y)
-            val r = Color.red(pixel)
-            val g = Color.green(pixel)
-            val b = Color.blue(pixel)
-            val gray = (0.3 * r + 0.59 * g + 0.11 * b).toInt()
-//            val bw = if (gray > 150) 255 else 0
-            val bw = if (gray > 130) 255 else 0
-            result.setPixel(x, y, Color.rgb(bw, bw, bw))
-        }
-    }
-    return result
 }
